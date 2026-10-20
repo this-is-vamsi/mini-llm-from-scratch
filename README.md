@@ -1,6 +1,6 @@
 # mini-llm-from-scratch
 
-> A hands-on implementation of a decoder-only transformer built entirely from scratch in TensorFlow/Keras, followed by GPT-2 fine-tuning with Hugging Face — demonstrating the full spectrum from architecture internals to production-grade transfer learning.
+> A hands-on implementation of a decoder-only Transformer built entirely from scratch in TensorFlow/Keras, followed by GPT-2 fine-tuning with Hugging Face — demonstrating the full spectrum from architecture internals to production-grade transfer learning.
 
 ---
 
@@ -8,51 +8,52 @@
 
 This project has two distinct parts with different goals:
 
-**Part 1 — Build from Scratch (Educational)**
-Implement every component of a transformer decoder from the ground up: character-level tokenization, token + positional embeddings, causal self-attention with masking, feed-forward layers, residual connections, and layer normalisation. Train a 120K parameter model on the TinyStories dataset and observe the fundamental limitations of training at small scale.
+**Part 1 — Build from Scratch (Architecture Internals)**
+Implement every component of a Transformer decoder from the ground up: character-level tokenization, token + learned positional embeddings, causal self-attention with lower-triangular masking, position-wise feed-forward layers, residual connections, and layer normalisation. Train a custom decoder model (~356K parameters) on the TinyStories dataset and observe the fundamental scaling behaviour of small models.
 
-**Part 2 — Transfer Learning with GPT-2 (Practical)**
-Load a pre-trained GPT-2 model (124M parameters — 1,000× larger) via Hugging Face Transformers and fine-tune it on TinyStories in just 3 epochs. Compare the generation quality directly against the scratch-trained model.
+**Part 2 — Transfer Learning with GPT-2 (Practical Fine-Tuning)**
+Load a pre-trained GPT-2 model (124.4M parameters — ~350× larger) via Hugging Face Transformers and fine-tune it on TinyStories in 3 epochs using `Trainer` and `DataCollatorForLanguageModeling`. Compare the generation quality and convergence directly against the scratch-trained model.
 
-The core insight: training from scratch teaches you *how* transformers work. Transfer learning teaches you *how they're actually used*.
+The core insight: training from scratch teaches you *how* Transformers work internally; transfer learning demonstrates *how* pre-trained representations enable rapid domain adaptation.
 
 ---
 
 ## Architecture (Part 1 — Scratch Model)
 
-```
-Input Token IDs
+```text
+Input Token IDs (batch_size, 64)
       │
       ▼
 TokenAndPositionEmbedding
-  ├── Token Embedding  (vocab_size → d_model)
-  └── Positional Embedding  (block_size → d_model)
+  ├── Token Embedding       (vocab_size=67 → d_model=128)
+  └── Positional Embedding  (block_size=64 → d_model=128)
       │
       ▼
-TransformerBlock × N
-  ├── CausalSelfAttention  (multi-head, causal mask)
-  ├── Add & Norm
-  ├── FeedForward  (d_model → 4×d_model → d_model)
-  └── Add & Norm
+TransformerBlock × 2
+  ├── CausalSelfAttention   (4 heads, key_dim=32, lower-triangular mask)
+  ├── Add & LayerNorm
+  ├── FeedForward           (128 → 384 → 128, ReLU + Dropout 0.2)
+  └── Add & LayerNorm
       │
       ▼
-Linear + Softmax  (d_model → vocab_size)
+Linear Projection           (d_model=128 → vocab_size=67 logits)
       │
       ▼
-Next Token Prediction
+Autoregressive Next-Token Sampling (Greedy / Temperature / Top-k)
 ```
 
-### Model Configuration
+### Model Configuration Comparison
 
-| Parameter | Value |
-|---|---|
-| Architecture | Decoder-only Transformer |
-| Parameters | ~120K |
-| Embedding dim (`d_model`) | 128 |
-| Attention heads | 4 |
-| Context length (`block_size`) | 64 tokens |
-| Tokenization | Character-level |
-| Dataset | TinyStories |
+| Parameter | Part 1: Scratch Mini-LLM | Part 2: Fine-Tuned GPT-2 |
+|---|---|---|
+| **Architecture** | 2-Layer Decoder-only Transformer | 12-Layer GPT-2 Decoder |
+| **Total Parameters** | **356,163** (~356K) | **124,439,808** (124.4M) |
+| **Embedding Dim (`d_model`)** | 128 (`dff=384`) | 768 (`dff=3072`) |
+| **Attention Heads** | 4 | 12 |
+| **Context Length (`block_size`)** | 64 characters | 512 subword tokens |
+| **Tokenization** | Character-level (67 ASCII chars) | Byte-Pair Encoding (50,257 vocab) |
+| **Dataset** | TinyStories (1,000 stories / ~942K chars) | TinyStories (2,000 train / 200 val stories) |
+| **Final Training Loss** | `1.1468` (train) / `1.3554` (val, 62.1% acc) | `1.9053` (3 epochs in 543s on GPU) |
 
 ---
 
@@ -60,105 +61,78 @@ Next Token Prediction
 
 | Component | Library |
 |---|---|
-| Framework | TensorFlow 2.x + Keras |
-| Pre-trained LLM | GPT-2 via Hugging Face Transformers |
-| Dataset | TinyStories (`roneneldan/TinyStories`) |
-| Data loading | HuggingFace `datasets` |
+| Scratch Model Framework | TensorFlow 2.x + Keras |
+| Pre-trained LLM & Fine-Tuning | GPT-2 via Hugging Face `transformers` (`Trainer`, `TrainingArguments`) |
+| Dataset | TinyStories (`roneneldan/TinyStories`) via Hugging Face `datasets` |
 | Visualisation | Matplotlib |
-| Runtime | Google Colab (GPU recommended) |
 
 ---
 
 ## Project Structure
 
-```
+```text
 mini-llm-from-scratch/
-├── mini_llm_training.ipynb   # Full notebook: scratch build + GPT-2 fine-tuning
-└── README.md
+├── mini_llm_training.ipynb   # Full notebook with executed training logs, loss curves & generation outputs
+├── transformer_model.py      # Modular Keras implementation of all custom Transformer layers & sampling
+├── requirements.txt          # Python dependencies
+├── .gitignore                # Standard Python/Jupyter gitignore
+└── README.md                 # Project documentation
 ```
 
 ---
 
 ## Quickstart
 
-### Run on Google Colab (Recommended)
-
-1. Open `mini_llm_training.ipynb` in Google Colab
-2. Go to **Runtime → Change runtime type → GPU**
-3. Run all cells from top to bottom
-
 ### Run Locally
 
 ```bash
 git clone https://github.com/this-is-vamsi/mini-llm-from-scratch.git
 cd mini-llm-from-scratch
-pip install tensorflow keras transformers datasets matplotlib
+pip install -r requirements.txt
 jupyter notebook mini_llm_training.ipynb
 ```
 
+### Run on Google Colab (GPU Recommended for Part 2 Fine-Tuning)
+
+1. Open `mini_llm_training.ipynb` in Google Colab
+2. Go to **Runtime → Change runtime type → T4 GPU**
+3. Run all cells from top to bottom
+
 ---
 
-## What You Will See
+## Results & Generation Comparison
 
-### Part 1 — Scratch Model Generation (after training)
+### Part 1 — Scratch Model (Character-Level, 356K Params, 1 Epoch)
+Reaches **63.7% training accuracy / 62.1% validation accuracy** (`val_loss = 1.3554`) over 67 characters, capturing character transition probabilities and punctuation structure, while illustrating why small character-level models struggle with long-range word coherence.
 
-```
+### Part 2 — GPT-2 Fine-Tuned on TinyStories (124.4M Params, 3 Epochs)
+```text
 Prompt: "Once upon a time"
-Output (greedy): "Once upon a time tee  a  i  the  a a a  l ..."
+Output: "Once upon a time, there was a girl named Lily. She was 3 years old and loved
+         to explore the world around her. One day, she went for a walk in the woods
+         with her mom..."
 ```
-Limited quality — expected. A 120K parameter model trained on a fraction of TinyStories cannot generalise. This is the point: you see *why* scale matters.
+Before fine-tuning, base GPT-2 generates adult/news-style prose. After 3 epochs (~9 minutes on GPU, `training_loss = 1.9053`), the model adapts cleanly to the simple narrative structure and vocabulary of TinyStories.
 
-### Part 2 — GPT-2 Fine-tuned Generation
+### Sampling Strategies Implemented
 
-```
-Prompt: "Once upon a time"
-Output: "Once upon a time there was a little girl named Lily.
-         She lived in a small house near a big forest..."
-```
-Coherent, fluent, contextually consistent — because GPT-2 already learned language at scale.
-
-### Sampling Strategies Demonstrated
-
-| Strategy | Temperature | top-k | Effect |
+| Strategy | Temperature | `top_k` | Effect |
 |---|---|---|---|
-| Greedy | ~0 | — | Deterministic, repetitive |
-| Focused | 0.5 | — | Coherent, less diverse |
-| Creative | 1.2 | — | Varied, occasionally incoherent |
-| Top-k | 0.8 | 10 | Balanced quality and diversity |
+| **Greedy** | `0.01` | `0` | Deterministic; picks argmax logit at each step |
+| **Focused** | `0.5` | `0` | Sharpens logit distribution for more conservative transitions |
+| **Creative** | `1.2` | `0` | Flattens logit distribution for higher entropy |
+| **Top-$k$** | `0.8` | `10` | Truncates tail probabilities to the top 10 candidate tokens |
 
 ---
 
 ## Key Concepts Implemented
 
-- **Causal masking** — prevents attention to future tokens during training
-- **Learned positional embeddings** — position information encoded as trainable vectors
-- **Multi-head self-attention** — parallel attention across subspaces
-- **Residual connections + LayerNorm** — stable training of deep networks
-- **Autoregressive generation** — token-by-token inference loop
-- **Temperature scaling** — controlling output distribution sharpness
-- **Top-k sampling** — restricting sampling to the k most probable tokens
-- **Transfer learning** — fine-tuning a 124M parameter pre-trained model in minutes
-
----
-
-## Training Details
-
-### Part 1 — Scratch Model
-- **Loss**: Sparse Categorical Cross-Entropy
-- **Optimiser**: Adam with learning rate warmup
-- **Regularisation**: Dropout (0.1), Early Stopping (patience=5)
-- **Training time**: ~2–5 minutes on GPU (Colab T4)
-
-### Part 2 — GPT-2 Fine-tuning
-- **Base model**: `gpt2` (124M parameters)
-- **Epochs**: 3
-- **Training time**: ~5–10 minutes on GPU (Colab T4)
-
----
-
-## Why This Project
-
-Most LLM tutorials treat the model as a black box — you call an API and get a response. This project takes the opposite approach: build every layer yourself first so you understand what the API is actually doing. The fine-tuning comparison then shows why transfer learning is the industry standard: not because from-scratch training is wrong, but because it requires scale that a single GPU cannot provide.
+- **Causal masking (`tf.linalg.band_part`)** — prevents self-attention heads from attending to future positions
+- **Learned positional embeddings** — encodes sequence order via trainable position vectors added to token embeddings
+- **Multi-head self-attention** — parallel attention across 4 subspaces (`key_dim = 32`)
+- **Residual connections + LayerNorm (`epsilon=1e-6`)** — stabilizes gradient flow across stacked decoder blocks
+- **Autoregressive generation loop** — sliding-window token-by-token inference with temperature scaling and `tf.nn.top_k` filtering
+- **Domain adaptation via Transfer Learning** — fine-tuning a 124M-parameter BPE causal language model with mixed precision (`fp16`) and cosine/linear warmup
 
 ---
 
